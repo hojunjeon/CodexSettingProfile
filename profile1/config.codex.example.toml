@@ -1,4 +1,4 @@
-# Merge these portable settings into %USERPROFILE%\.codex\config.toml.
+# install-profile1.ps1 upserts these portable settings into %USERPROFILE%\.codex\config.toml.
 # Do not copy machine-specific hook trust hashes, Desktop runtime paths, keyrings, or tokens.
 
 model = "gpt-5.5"
