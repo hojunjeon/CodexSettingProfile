@@ -1,0 +1,135 @@
+diff --git a/tests/test_trihead.py b/tests/test_trihead.py
+index 00522cc..97c770b 100644
+--- a/tests/test_trihead.py
++++ b/tests/test_trihead.py
+@@ -1,10 +1,17 @@
++import os
++import subprocess
++import sys
+ import unittest
++from pathlib import Path
+ 
+ from trihead.caveman_layer import shape_output
+ from trihead.pipeline import optimize_text
+ from trihead.rtk_filters import filter_text
+ 
+ 
++REPO_ROOT = Path(__file__).resolve().parents[1]
++
++
+ class TriheadTests(unittest.TestCase):
+     def test_grep_filter_preserves_important_file_line(self):
+         raw = "\n".join(
+@@ -34,6 +41,39 @@ class TriheadTests(unittest.TestCase):
+         self.assertNotIn("happy to help", out)
+         self.assertIn("useMemo", out)
+ 
++    def test_cli_reads_utf8_stdin_when_process_default_is_cp949(self):
++        raw = "src/채용.py:1:fatal 합격\n"
++        proc = _run_cli(["filter", "--hint", "rg"], input_bytes=raw.encode("utf-8"))
++
++        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", errors="replace"))
++        out = proc.stdout.decode("utf-8", errors="replace")
++        self.assertIn("src/채용.py:1", out)
++        self.assertIn("합격", out)
++
++    def test_run_decodes_utf8_child_output_when_process_default_is_cp949(self):
++        child = "import sys; sys.stdout.buffer.write('fatal 합격\\n'.encode()); sys.stderr.buffer.write('warning 경고\\n'.encode())"
++        proc = _run_cli(["run", "--hint", "log", "--", sys.executable, "-c", child])
++
++        self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", errors="replace"))
++        out = proc.stdout.decode("utf-8", errors="replace")
++        self.assertIn("fatal 합격", out)
++        self.assertIn("warning 경고", out)
++
++
++def _run_cli(args: list[str], input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
++    env = os.environ.copy()
++    env["PYTHONIOENCODING"] = "cp949"
++    env["PYTHONPATH"] = str(REPO_ROOT)
++    return subprocess.run(
++        [sys.executable, "-m", "trihead.cli", *args],
++        input=input_bytes,
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++        cwd=REPO_ROOT,
++        env=env,
++        check=False,
++    )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/trihead/cli.py b/trihead/cli.py
+index fa516a3..566fcb4 100644
+--- a/trihead/cli.py
++++ b/trihead/cli.py
+@@ -14,6 +14,7 @@ from .tokens import count_tokens, savings_percent
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
++    _configure_utf8_stdio()
+     parser = argparse.ArgumentParser(prog="trihead")
+     sub = parser.add_subparsers(dest="cmd", required=True)
+ 
+@@ -24,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
+     p_compress = sub.add_parser("compress", help="Optimize stdin/file with quality guard")
+     p_compress.add_argument("file", nargs="?")
+     p_compress.add_argument("--hint")
+-    p_compress.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="balanced")
++    p_compress.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="aggressive")
+     p_compress.add_argument("--no-marker", action="store_true")
+     p_compress.add_argument("--json", action="store_true")
+ 
+@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
+ 
+     p_run = sub.add_parser("run", help="Run a command and optimize stdout/stderr")
+     p_run.add_argument("--hint")
+-    p_run.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="balanced")
++    p_run.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="aggressive")
+     p_run.add_argument("command", nargs=argparse.REMAINDER)
+ 
+     p_retrieve = sub.add_parser("retrieve", help="Retrieve full original by CCR sha")
+@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
+     sub.add_parser("stats", help="Show local savings history")
+ 
+     p_bench = sub.add_parser("bench", help="Run built-in before/after benchmark")
+-    p_bench.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="balanced")
++    p_bench.add_argument("--mode", choices=["safe", "balanced", "aggressive"], default="aggressive")
+     p_bench.add_argument("--output", default="outputs/trihead_benchmark.md")
+     p_bench.add_argument("--json-output", default="outputs/trihead_benchmark.json")
+ 
+@@ -89,7 +90,14 @@ def main(argv: list[str] | None = None) -> int:
+         command = args.command[1:] if args.command[:1] == ["--"] else args.command
+         if not command:
+             parser.error("trihead run needs a command after --")
+-        proc = subprocess.run(command, capture_output=True, text=True, shell=False)
++        proc = subprocess.run(
++            command,
++            capture_output=True,
++            text=True,
++            encoding="utf-8",
++            errors="replace",
++            shell=False,
++        )
+         combined = proc.stdout + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
+         result = optimize_text(combined, hint=args.hint, mode=args.mode, marker=True, record=True)
+         sys.stdout.write(result.text)
+@@ -114,9 +122,16 @@ def main(argv: list[str] | None = None) -> int:
+ 
+ def _read_input(path: str | None) -> str:
+     if path:
+-        return Path(path).read_text(encoding="utf-8")
++        return Path(path).read_text(encoding="utf-8-sig")
+     return sys.stdin.read()
+ 
+ 
++def _configure_utf8_stdio() -> None:
++    for stream in (sys.stdin, sys.stdout, sys.stderr):
++        reconfigure = getattr(stream, "reconfigure", None)
++        if callable(reconfigure):
++            reconfigure(encoding="utf-8", errors="replace")
++
++
+ if __name__ == "__main__":
+     raise SystemExit(main())

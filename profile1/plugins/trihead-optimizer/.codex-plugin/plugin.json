@@ -1,0 +1,23 @@
+{
+  "name": "trihead-optimizer",
+  "version": "0.1.0",
+  "description": "Global Trihead guidance for token-efficient Codex work.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Trihead Optimizer",
+    "shortDescription": "Keep large Codex work token-efficient with trihead.",
+    "longDescription": "Adds concise session guidance for using trihead run, filter, compress, shape, and retrieve while preserving deterministic facts.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills",
+      "Token Optimization"
+    ],
+    "defaultPrompt": [
+      "Use trihead for large command output."
+    ]
+  }
+}
